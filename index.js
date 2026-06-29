@@ -13,6 +13,16 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const port = process.env.PORT || 5000;
 
+//  tracking id
+
+function generateTrackingId() {
+  const prefix = "PRCL";
+
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+  const random = crypto.randomBytes(3).toString("hex".toUpperCase());
+}
+
 // Force Node.js to use Cloudflare and Google public DNS
 
 const dns = require("node:dns");
@@ -39,7 +49,14 @@ async function run() {
     await client.connect();
 
     const db = client.db("ans_shift_db");
+
+    // parcel data
+
     const parcelCollection = db.collection("parcels");
+
+    // payment data
+
+    const paymentCollection = db.collection("payments");
 
     // parcel api
 
@@ -98,10 +115,14 @@ async function run() {
             quantity: 1,
           },
         ],
+
         mode: "payment",
+
         metadata: {
           parcelId: paymentInfo.parcelId,
+          parcelName: paymentInfo.parcelName,
         },
+
         customer_email: paymentInfo.senderEmail,
         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
@@ -157,10 +178,30 @@ async function run() {
         const update = {
           $set: {
             paymentStatus: "paid",
+            trackingId: generateTrackingId(),
           },
         };
         const result = await parcelCollection.updateOne(query, update);
-        res.send(result);
+
+        const payment = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          parcelId: session.metadata.parcelId,
+          parcelName: session.metadata.parcelName,
+          transactionId: session.payment_intent,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+        };
+
+        if (session.payment_status === "paid") {
+          const resultPayment = await paymentCollection.insertOne(payment);
+          res.send({
+            success: true,
+            modifyParcel: result,
+            paymentInfo: resultPayment,
+          });
+        }
       }
 
       res.send({ success: false });

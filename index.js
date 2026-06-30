@@ -15,13 +15,21 @@ const port = process.env.PORT || 5000;
 
 //  tracking id
 
+const crypto = require("crypto");
+
 function generateTrackingId() {
   const prefix = "PRCL";
 
+  // Example: 20260630
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
-  const random = crypto.randomBytes(3).toString("hex".toUpperCase());
+  // Generate 6 random hexadecimal characters
+  const random = crypto.randomBytes(3).toString("hex").toUpperCase();
+
+  // Final Tracking ID
+  return `${prefix}-${date}-${random}`;
 }
+console.log(generateTrackingId());
 
 // Force Node.js to use Cloudflare and Google public DNS
 
@@ -168,7 +176,11 @@ async function run() {
     app.patch("/payment-success", async (req, res) => {
       const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
+
       console.log("session retrieve", session);
+
+      const trackingId = generateTrackingId();
+
       if (session.payment_status === "paid") {
         const id = session.metadata.parcelId;
         const query = {
@@ -178,7 +190,7 @@ async function run() {
         const update = {
           $set: {
             paymentStatus: "paid",
-            trackingId: generateTrackingId(),
+            trackingId: trackingId,
           },
         };
         const result = await parcelCollection.updateOne(query, update);
@@ -199,12 +211,12 @@ async function run() {
           res.send({
             success: true,
             modifyParcel: result,
+            trackingId: trackingId,
+            transactionId: session.payment_intent,
             paymentInfo: resultPayment,
           });
         }
       }
-
-      res.send({ success: false });
     });
 
     // parcel delete one

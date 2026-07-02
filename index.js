@@ -5,7 +5,6 @@ require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const cors = require("cors");
-console.log(process.env.STRIPE_SECRET);
 
 const app = express();
 
@@ -29,7 +28,6 @@ function generateTrackingId() {
   // Final Tracking ID
   return `${prefix}-${date}-${random}`;
 }
-console.log(generateTrackingId());
 
 // Force Node.js to use Cloudflare and Google public DNS
 
@@ -82,6 +80,21 @@ async function run() {
 
       const cursor = parcelCollection.find(query, options);
       const result = await cursor.toArray();
+      res.send(result);
+    });
+    // payment related api
+
+    app.get("/payments", async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+
+      if (email) {
+        query.customerEmail = email;
+      }
+      const cursor = paymentCollection.find(query);
+
+      const result = await cursor.toArray();
+
       res.send(result);
     });
 
@@ -177,7 +190,19 @@ async function run() {
       const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-      console.log("session retrieve", session);
+      const transactionId = session.payment_intent;
+
+      const query = { transactionId: transactionId };
+
+      const paymentExist = await paymentCollection.findOne(query);
+
+      if (paymentExist) {
+        return res.send({
+          message: "already exists",
+          transactionId: transactionId,
+          trackingId: paymentExist.trackingId,
+        });
+      }
 
       const trackingId = generateTrackingId();
 
@@ -204,6 +229,7 @@ async function run() {
           transactionId: session.payment_intent,
           paymentStatus: session.payment_status,
           paidAt: new Date(),
+          trackingId: trackingId,
         };
 
         if (session.payment_status === "paid") {

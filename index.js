@@ -5,12 +5,20 @@ require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const cors = require("cors");
-
 const app = express();
-
+const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
-const port = process.env.PORT || 5000;
+// firebase  admin  new version
+
+const { initializeApp, cert } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
+
+const serviceAccount = require("./ans-shift-firebase-adminsdk.json");
+
+initializeApp({
+  credential: cert(serviceAccount),
+});
 
 //  tracking id
 
@@ -50,6 +58,26 @@ const client = new MongoClient(uri, {
   },
 });
 
+const verifyFirebaseToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  // console.log(token);
+
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  try {
+    const tokenId = token.split(" ")[1];
+    const decoded = await getAuth().verifyIdToken(tokenId);
+
+    req.decoded_email = decoded.email;
+    next();
+  } catch (error) {
+    console.error("Firebase Verify Error:", error);
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+};
+
 async function run() {
   try {
     await client.connect();
@@ -84,14 +112,21 @@ async function run() {
     });
     // payment related api
 
-    app.get("/payments", async (req, res) => {
+    app.get("/payments", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       const query = {};
+      // console.log("Headers", req.headers);
 
       if (email) {
         query.customerEmail = email;
+
+        // check email address
+
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
       }
-      const cursor = paymentCollection.find(query);
+      const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
 
       const result = await cursor.toArray();
 
@@ -270,10 +305,6 @@ async function run() {
 }
 
 run().catch(console.dir);
-
-app.get("/", (req, res) => {
-  res.send("Hello Ans.shift");
-});
 
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);

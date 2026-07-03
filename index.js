@@ -84,13 +84,17 @@ async function run() {
 
     const db = client.db("ans_shift_db");
 
-    // parcel data
+    // parcel collection
 
     const parcelCollection = db.collection("parcels");
 
-    // payment data
+    // payment collection
 
     const paymentCollection = db.collection("payments");
+
+    // user collection
+
+    const userCollection = db.collection("users");
 
     // parcel api
 
@@ -143,6 +147,26 @@ async function run() {
       const result = await parcelCollection.findOne(query);
       res.send(result);
     });
+
+    // user related api
+
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+
+      user.role = "user";
+      user.createdAt = new Date();
+      const email = user.email;
+      const userExists = await userCollection.findOne({ email: email });
+
+      if (userExists) {
+        return res.send({ message: "User exists" });
+      }
+      const result = await userCollection.insertOne(user);
+
+      res.send(result);
+    });
+
+    // parcels related api
 
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;

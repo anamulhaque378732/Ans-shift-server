@@ -96,6 +96,10 @@ async function run() {
 
     const userCollection = db.collection("users");
 
+    // raider collection
+
+    const raiderCollection = db.collection("raiders");
+
     // parcel api
 
     app.get("/parcels", async (req, res) => {
@@ -145,6 +149,21 @@ async function run() {
       const query = { _id: new ObjectId(id) };
 
       const result = await parcelCollection.findOne(query);
+      res.send(result);
+    });
+
+    // raider data load
+    app.get("/raiders", async (req, res) => {
+      const query = {};
+
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+
+      const cursor = raiderCollection.find(query).sort({ createdAt: -1 });
+
+      const result = await cursor.toArray();
+
       res.send(result);
     });
 
@@ -243,6 +262,20 @@ async function run() {
     //   res.send({ url: session.url });
     // });
 
+    // raider related api
+
+    app.post("/raiders", async (req, res) => {
+      const raider = req.body;
+
+      raider.status = "pending";
+
+      raider.createdAt = new Date();
+
+      const result = await raiderCollection.insertOne(raider);
+
+      res.send(result);
+    });
+
     // verify payment
 
     app.patch("/payment-success", async (req, res) => {
@@ -304,6 +337,38 @@ async function run() {
       }
     });
 
+    // verify raider / accept raider
+
+    app.patch("/raiders/:id", verifyFirebaseToken, async (req, res) => {
+      const status = req.body.status;
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+
+      const updatedDoc = {
+        $set: {
+          status: status,
+        },
+      };
+
+      const result = await raiderCollection.updateOne(query, updatedDoc);
+
+      if (status === "approved") {
+        const email = req.body.email;
+        const userQuery = { email: email };
+        const updateUser = {
+          $set: {
+            role: "raider",
+          },
+        };
+        const userResult = await userCollection.updateOne(
+          userQuery,
+          updateUser,
+        );
+      }
+
+      res.send(result);
+    });
+
     // parcel delete one
 
     app.delete("/parcels/:id", async (req, res) => {
@@ -312,6 +377,18 @@ async function run() {
       const query = { _id: new ObjectId(id) };
 
       const result = await parcelCollection.deleteOne(query);
+
+      res.send(result);
+    });
+
+    //  Delete a single raider raider
+
+    app.delete("/raiders/:id", async (req, res) => {
+      const id = req.params.id;
+
+      const query = { _id: new ObjectId(id) };
+
+      const result = await raiderCollection.deleteOne(query);
 
       res.send(result);
     });

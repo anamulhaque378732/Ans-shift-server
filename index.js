@@ -167,7 +167,16 @@ async function run() {
       res.send(result);
     });
 
-    // user related api
+    // user get related api
+
+    app.get("/users", verifyFirebaseToken, async (req, res) => {
+      const cursor = userCollection.find();
+
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // user post related api
 
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -335,6 +344,21 @@ async function run() {
           });
         }
       }
+    });
+
+    // update user Patch
+    app.patch("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const roleInfo = req.body;
+
+      const query = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: { role: roleInfo.role },
+      };
+
+      const result = await userCollection.updateOne(query, updatedDoc);
+
+      res.send(result);
     });
 
     // verify raider / accept raider

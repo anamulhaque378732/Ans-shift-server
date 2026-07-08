@@ -153,6 +153,7 @@ async function run() {
     });
 
     // raider data load
+
     app.get("/raiders", async (req, res) => {
       const query = {};
 
@@ -174,6 +175,20 @@ async function run() {
 
       const result = await cursor.toArray();
       res.send(result);
+    });
+
+    // set role in the website in id
+
+    app.get("/users/:id", async (req, res) => {});
+
+    //  set role in the wesite in email
+
+    app.get("/user/:email/role", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+
+      res.send({ role: user?.role || "user" });
     });
 
     // user post related api

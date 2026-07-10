@@ -109,8 +109,7 @@ async function run() {
       const user = await userCollection.findOne(query);
 
       if (!user || user.role !== "admin") {
-        return res.status(403).send({message:"forbidden access"}) 
-
+        return res.status(403).send({ message: "forbidden access" });
       }
 
       next();
@@ -121,11 +120,15 @@ async function run() {
     app.get("/parcels", async (req, res) => {
       const query = {};
 
-      const { email } = req.query;
+      const { email, deliveryStatus } = req.query;
 
       //  /parcels?email=""&
       if (email) {
         query.senderEmail = email;
+      }
+
+      if (deliveryStatus) {
+        query.deliveryStatus = deliveryStatus;
       }
 
       const options = { sort: { createdAt: -1 } };
@@ -187,7 +190,22 @@ async function run() {
     // user get related api
 
     app.get("/users", verifyFirebaseToken, async (req, res) => {
-      const cursor = userCollection.find();
+      const searchText = req.query.searchText;
+
+      const query = {};
+
+      if (searchText) {
+        // way one : search bye name
+        // query.displayName = { $regex: searchText, $options: "i" };
+
+        // way two  : search name and email
+        query.$or = [
+          { displayName: { $regex: searchText, $options: "i" } },
+          { email: { $regex: searchText, $options: "i" } },
+        ];
+      }
+
+      const cursor = userCollection.find(query).sort({ createdAt: -1 });
 
       const result = await cursor.toArray();
       res.send(result);
@@ -347,6 +365,7 @@ async function run() {
         const update = {
           $set: {
             paymentStatus: "paid",
+            deliveryStatus: "pending-pickup",
             trackingId: trackingId,
           },
         };
@@ -399,35 +418,40 @@ async function run() {
 
     // verify raider / accept raider
 
-    app.patch("/raiders/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-      const status = req.body.status;
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
+    app.patch(
+      "/raiders/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const status = req.body.status;
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
 
-      const updatedDoc = {
-        $set: {
-          status: status,
-        },
-      };
-
-      const result = await raiderCollection.updateOne(query, updatedDoc);
-
-      if (status === "approved") {
-        const email = req.body.email;
-        const userQuery = { email: email };
-        const updateUser = {
+        const updatedDoc = {
           $set: {
-            role: "raider",
+            status: status,
           },
         };
-        const userResult = await userCollection.updateOne(
-          userQuery,
-          updateUser,
-        );
-      }
 
-      res.send(result);
-    });
+        const result = await raiderCollection.updateOne(query, updatedDoc);
+
+        if (status === "approved") {
+          const email = req.body.email;
+          const userQuery = { email: email };
+          const updateUser = {
+            $set: {
+              role: "raider",
+            },
+          };
+          const userResult = await userCollection.updateOne(
+            userQuery,
+            updateUser,
+          );
+        }
+
+        res.send(result);
+      },
+    );
 
     // parcel delete one
 

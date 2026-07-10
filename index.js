@@ -100,6 +100,22 @@ async function run() {
 
     const raiderCollection = db.collection("raiders");
 
+    // middle  admin before allowing admin activity
+    // must be used after verifyFirebaseToken middleware
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({message:"forbidden access"}) 
+
+      }
+
+      next();
+    };
+
     // parcel api
 
     app.get("/parcels", async (req, res) => {
@@ -181,9 +197,9 @@ async function run() {
 
     app.get("/users/:id", async (req, res) => {});
 
-    //  set role in the wesite in email
+    //  set role in the website in email
 
-    app.get("/user/:email/role", async (req, res) => {
+    app.get("/users/:email/role", async (req, res) => {
       const email = req.params.email;
       const query = { email };
       const user = await userCollection.findOne(query);
@@ -362,23 +378,28 @@ async function run() {
     });
 
     // update user Patch
-    app.patch("/users/:id", async (req, res) => {
-      const id = req.params.id;
-      const roleInfo = req.body;
+    app.patch(
+      "/users/:id/role",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const roleInfo = req.body;
 
-      const query = { _id: new ObjectId(id) };
-      const updatedDoc = {
-        $set: { role: roleInfo.role },
-      };
+        const query = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: { role: roleInfo.role },
+        };
 
-      const result = await userCollection.updateOne(query, updatedDoc);
+        const result = await userCollection.updateOne(query, updatedDoc);
 
-      res.send(result);
-    });
+        res.send(result);
+      },
+    );
 
     // verify raider / accept raider
 
-    app.patch("/raiders/:id", verifyFirebaseToken, async (req, res) => {
+    app.patch("/raiders/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
       const status = req.body.status;
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };

@@ -174,10 +174,18 @@ async function run() {
     // raider data load
 
     app.get("/raiders", async (req, res) => {
+      const { status, district, workStatus } = req.query;
       const query = {};
+      if (status) {
+        query.status = status;
+      }
 
-      if (req.query.status) {
-        query.status = req.query.status;
+      if (district) {
+        query.district = district;
+      }
+
+      if (workStatus) {
+        query.workStatus = workStatus;
       }
 
       const cursor = raiderCollection.find(query).sort({ createdAt: -1 });
@@ -397,6 +405,7 @@ async function run() {
     });
 
     // update user Patch
+
     app.patch(
       "/users/:id/role",
       verifyFirebaseToken,
@@ -430,6 +439,7 @@ async function run() {
         const updatedDoc = {
           $set: {
             status: status,
+            workStatus: "available",
           },
         };
 
@@ -452,6 +462,41 @@ async function run() {
         res.send(result);
       },
     );
+
+    // update parcel
+
+    app.patch("/parcels/:id", async (req, res) => {
+      const { raiderId, raiderName, raiderEmail } = req.body;
+      const id = req.params.id;
+
+      const query = { _id: new ObjectId(id) };
+
+      const updatedDoc = {
+        $set: {
+          deliveryStatus: "driver_assign",
+          raiderId: raiderId,
+          raiderName: raiderName,
+          raiderEmail: raiderEmail,
+        },
+      };
+
+      const result = await parcelCollection.updateOne(query, updatedDoc);
+
+      // update raider information
+      const raiderQuery = { _id: new ObjectId(raiderId) };
+
+      const raiderUpdatedDoc = {
+        $set: {
+          workStatus: "in_delivery",
+        },
+      };
+      const raiderResult = await raiderCollection.updateOne(
+        raiderQuery,
+        raiderUpdatedDoc,
+      );
+
+      res.send(raiderResult);
+    });
 
     // parcel delete one
 

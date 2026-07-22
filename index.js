@@ -115,7 +115,7 @@ async function run() {
       next();
     };
 
-    // parcel api
+    // ***************** parcel related all api *********************
 
     app.get("/parcels", async (req, res) => {
       const query = {};
@@ -137,27 +137,6 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
-    // payment related api
-
-    app.get("/payments", verifyFirebaseToken, async (req, res) => {
-      const email = req.query.email;
-      const query = {};
-
-      if (email) {
-        query.customerEmail = email;
-
-        // check email address
-
-        if (email !== req.decoded_email) {
-          return res.status(403).send({ message: "forbidden access" });
-        }
-      }
-      const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
-
-      const result = await cursor.toArray();
-
-      res.send(result);
-    });
 
     // raider related data load, assigned deliver
 
@@ -169,7 +148,7 @@ async function run() {
         query.raiderEmail = raiderEmail;
       }
       if (deliveryStatus) {
-        query.deliveryStatus = deliveryStatus;
+        query.deliveryStatus = { $in: ["driver_assign", "Raider_arriving"] };
       }
 
       const cursor = parcelCollection.find(query);
@@ -190,31 +169,87 @@ async function run() {
       res.send(result);
     });
 
-    // raider data load
+    // parcels related api
 
-    app.get("/raiders", async (req, res) => {
-      const { status, district, workStatus } = req.query;
-      const query = {};
-      if (status) {
-        query.status = status;
-      }
+    app.post("/parcels", async (req, res) => {
+      const parcel = req.body;
+      // parcel created time
+      parcel.createdAt = new Date();
 
-      if (district) {
-        query.district = district;
-      }
+      const result = await parcelCollection.insertOne(parcel);
+      res.send(result);
+    });
 
-      if (workStatus) {
-        query.workStatus = workStatus;
-      }
+    // update parcel
 
-      const cursor = raiderCollection.find(query).sort({ createdAt: -1 });
+    // ToDo : Rename this to be specific like /parcel/:id/assign
 
-      const result = await cursor.toArray();
+    app.patch("/parcels/:id", async (req, res) => {
+      const { raiderId, raiderName, raiderEmail } = req.body;
+      const id = req.params.id;
+
+      const query = { _id: new ObjectId(id) };
+
+      const updatedDoc = {
+        $set: {
+          deliveryStatus: "driver_assign",
+          raiderId: raiderId,
+          raiderName: raiderName,
+          raiderEmail: raiderEmail,
+        },
+      };
+
+      const result = await parcelCollection.updateOne(query, updatedDoc);
+
+      // update raider information
+      const raiderQuery = { _id: new ObjectId(raiderId) };
+
+      const raiderUpdatedDoc = {
+        $set: {
+          workStatus: "in_delivery",
+        },
+      };
+      const raiderResult = await raiderCollection.updateOne(
+        raiderQuery,
+        raiderUpdatedDoc,
+      );
+
+      res.send(raiderResult);
+    });
+
+    // assign raider arriving
+
+    app.patch("/parcels/:id/status", async (req, res) => {
+      const { deliveryStatus } = req.body;
+
+      const query = { _id: new ObjectId(req.params.id) };
+
+      const updatedDoc = {
+        $set: {
+          deliveryStatus: deliveryStatus,
+        },
+      };
+
+      const result = await parcelCollection.updateOne(query, updatedDoc);
 
       res.send(result);
     });
 
-    // user get related api
+    // parcel delete one
+
+    app.delete("/parcels/:id", async (req, res) => {
+      const id = req.params.id;
+
+      const query = { _id: new ObjectId(id) };
+
+      const result = await parcelCollection.deleteOne(query);
+
+      res.send(result);
+    });
+
+    //  ******** user get related api all api *******************
+
+    // user get
 
     app.get("/users", verifyFirebaseToken, async (req, res) => {
       const searchText = req.query.searchText;
@@ -238,10 +273,6 @@ async function run() {
       res.send(result);
     });
 
-    // set role in the website in id
-
-    app.get("/users/:id", async (req, res) => {});
-
     //  set role in the website in email
 
     app.get("/users/:email/role", async (req, res) => {
@@ -251,6 +282,10 @@ async function run() {
 
       res.send({ role: user?.role || "user" });
     });
+
+    // set role in the website in id
+
+    app.get("/users/:id", async (req, res) => {});
 
     // user post related api
 
@@ -270,18 +305,142 @@ async function run() {
       res.send(result);
     });
 
-    // parcels related api
+    // update user Patch
 
-    app.post("/parcels", async (req, res) => {
-      const parcel = req.body;
-      // parcel created time
-      parcel.createdAt = new Date();
+    app.patch(
+      "/users/:id/role",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const roleInfo = req.body;
 
-      const result = await parcelCollection.insertOne(parcel);
+        const query = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: { role: roleInfo.role },
+        };
+
+        const result = await userCollection.updateOne(query, updatedDoc);
+
+        res.send(result);
+      },
+    );
+
+    //  *******  raider related all api   *******
+
+    // raider data load get
+
+    app.get("/raiders", async (req, res) => {
+      const { status, district, workStatus } = req.query;
+      const query = {};
+      if (status) {
+        query.status = status;
+      }
+
+      if (district) {
+        query.district = district;
+      }
+
+      if (workStatus) {
+        query.workStatus = workStatus;
+      }
+
+      const cursor = raiderCollection.find(query).sort({ createdAt: -1 });
+
+      const result = await cursor.toArray();
+
       res.send(result);
     });
 
-    // payment related api new
+    // raider related api post
+
+    app.post("/raiders", async (req, res) => {
+      const raider = req.body;
+
+      raider.status = "pending";
+
+      raider.createdAt = new Date();
+
+      const result = await raiderCollection.insertOne(raider);
+
+      res.send(result);
+    });
+
+    // verify raider / accept raider
+
+    app.patch(
+      "/raiders/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const status = req.body.status;
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+
+        const updatedDoc = {
+          $set: {
+            status: status,
+            workStatus: "available",
+          },
+        };
+
+        const result = await raiderCollection.updateOne(query, updatedDoc);
+
+        if (status === "approved") {
+          const email = req.body.email;
+          const userQuery = { email: email };
+          const updateUser = {
+            $set: {
+              role: "raider",
+            },
+          };
+          const userResult = await userCollection.updateOne(
+            userQuery,
+            updateUser,
+          );
+        }
+
+        res.send(result);
+      },
+    );
+
+    //  Delete a single raider raider
+
+    app.delete("/raiders/:id", async (req, res) => {
+      const id = req.params.id;
+
+      const query = { _id: new ObjectId(id) };
+
+      const result = await raiderCollection.deleteOne(query);
+
+      res.send(result);
+    });
+
+    // ********* payment related all  api ********
+
+    // payment get
+
+    app.get("/payments", verifyFirebaseToken, async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+
+      if (email) {
+        query.customerEmail = email;
+
+        // check email address
+
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
+      }
+      const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
+
+      const result = await cursor.toArray();
+
+      res.send(result);
+    });
+
+    // payment related api new post
 
     app.post("/payment-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
@@ -347,21 +506,9 @@ async function run() {
     //   res.send({ url: session.url });
     // });
 
-    // raider related api
-
-    app.post("/raiders", async (req, res) => {
-      const raider = req.body;
-
-      raider.status = "pending";
-
-      raider.createdAt = new Date();
-
-      const result = await raiderCollection.insertOne(raider);
-
-      res.send(result);
-    });
-
     // verify payment
+
+    // payment related api patch
 
     app.patch("/payment-success", async (req, res) => {
       const sessionId = req.query.session_id;
@@ -421,124 +568,6 @@ async function run() {
           });
         }
       }
-    });
-
-    // update user Patch
-
-    app.patch(
-      "/users/:id/role",
-      verifyFirebaseToken,
-      verifyAdmin,
-      async (req, res) => {
-        const id = req.params.id;
-        const roleInfo = req.body;
-
-        const query = { _id: new ObjectId(id) };
-        const updatedDoc = {
-          $set: { role: roleInfo.role },
-        };
-
-        const result = await userCollection.updateOne(query, updatedDoc);
-
-        res.send(result);
-      },
-    );
-
-    // verify raider / accept raider
-
-    app.patch(
-      "/raiders/:id",
-      verifyFirebaseToken,
-      verifyAdmin,
-      async (req, res) => {
-        const status = req.body.status;
-        const id = req.params.id;
-        const query = { _id: new ObjectId(id) };
-
-        const updatedDoc = {
-          $set: {
-            status: status,
-            workStatus: "available",
-          },
-        };
-
-        const result = await raiderCollection.updateOne(query, updatedDoc);
-
-        if (status === "approved") {
-          const email = req.body.email;
-          const userQuery = { email: email };
-          const updateUser = {
-            $set: {
-              role: "raider",
-            },
-          };
-          const userResult = await userCollection.updateOne(
-            userQuery,
-            updateUser,
-          );
-        }
-
-        res.send(result);
-      },
-    );
-
-    // update parcel
-
-    app.patch("/parcels/:id", async (req, res) => {
-      const { raiderId, raiderName, raiderEmail } = req.body;
-      const id = req.params.id;
-
-      const query = { _id: new ObjectId(id) };
-
-      const updatedDoc = {
-        $set: {
-          deliveryStatus: "driver_assign",
-          raiderId: raiderId,
-          raiderName: raiderName,
-          raiderEmail: raiderEmail,
-        },
-      };
-
-      const result = await parcelCollection.updateOne(query, updatedDoc);
-
-      // update raider information
-      const raiderQuery = { _id: new ObjectId(raiderId) };
-
-      const raiderUpdatedDoc = {
-        $set: {
-          workStatus: "in_delivery",
-        },
-      };
-      const raiderResult = await raiderCollection.updateOne(
-        raiderQuery,
-        raiderUpdatedDoc,
-      );
-
-      res.send(raiderResult);
-    });
-
-    // parcel delete one
-
-    app.delete("/parcels/:id", async (req, res) => {
-      const id = req.params.id;
-
-      const query = { _id: new ObjectId(id) };
-
-      const result = await parcelCollection.deleteOne(query);
-
-      res.send(result);
-    });
-
-    //  Delete a single raider raider
-
-    app.delete("/raiders/:id", async (req, res) => {
-      const id = req.params.id;
-
-      const query = { _id: new ObjectId(id) };
-
-      const result = await raiderCollection.deleteOne(query);
-
-      res.send(result);
     });
 
     // Send a ping to confirm a successful connection

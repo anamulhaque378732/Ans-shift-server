@@ -142,7 +142,6 @@ async function run() {
     app.get("/payments", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       const query = {};
-      // console.log("Headers", req.headers);
 
       if (email) {
         query.customerEmail = email;
@@ -160,7 +159,27 @@ async function run() {
       res.send(result);
     });
 
-    // payment data load
+    // raider related data load, assigned deliver
+
+    app.get("/parcels/raider", async (req, res) => {
+      const { raiderEmail, deliveryStatus } = req.query;
+      const query = {};
+
+      if (raiderEmail) {
+        query.raiderEmail = raiderEmail;
+      }
+      if (deliveryStatus) {
+        query.deliveryStatus = deliveryStatus;
+      }
+
+      const cursor = parcelCollection.find(query);
+
+      const result = await cursor.toArray();
+
+      res.send(result);
+    });
+
+    // payment data load related parcel
 
     app.get("/parcels/:id", async (req, res) => {
       const id = req.params.id;

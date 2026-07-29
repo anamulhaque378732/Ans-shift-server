@@ -39,9 +39,9 @@ function generateTrackingId() {
 
 // Force Node.js to use Cloudflare and Google public DNS
 
-const dns = require("node:dns");
+// const dns = require("node:dns");
 
-dns.setServers(["1.1.1.1", "8.8.8.8"]);
+// dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 // middleware
 
@@ -115,7 +115,7 @@ async function run() {
       next();
     };
 
-    // ***************** parcel related all api *********************
+    // ********  parcel related all api **************
 
     app.get("/parcels", async (req, res) => {
       const query = {};
@@ -148,7 +148,10 @@ async function run() {
         query.raiderEmail = raiderEmail;
       }
       if (deliveryStatus) {
-        query.deliveryStatus = { $in: ["driver_assign", "Raider_arriving"] };
+        // query.deliveryStatus = { $in: ["driver_assign", "Raider_arriving"] };
+        query.deliveryStatus = {
+          $nin: ["driver_delevered"],
+        };
       }
 
       const cursor = parcelCollection.find(query);
@@ -282,10 +285,6 @@ async function run() {
 
       res.send({ role: user?.role || "user" });
     });
-
-    // set role in the website in id
-
-    app.get("/users/:id", async (req, res) => {});
 
     // user post related api
 
@@ -584,6 +583,9 @@ async function run() {
 
 run().catch(console.dir);
 
+app.get("/", (req, res) => {
+  res.send("ans shift server is running");
+});
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });

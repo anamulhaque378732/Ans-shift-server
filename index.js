@@ -147,11 +147,12 @@ async function run() {
       if (raiderEmail) {
         query.raiderEmail = raiderEmail;
       }
-      if (deliveryStatus) {
-        // query.deliveryStatus = { $in: ["driver_assign", "Raider_arriving"] };
+      if (deliveryStatus !== "parcel_delivered") {
         query.deliveryStatus = {
           $nin: ["driver_delevered"],
         };
+      } else {
+        query.deliveryStatus = deliveryStatus;
       }
 
       const cursor = parcelCollection.find(query);
@@ -223,7 +224,7 @@ async function run() {
     // assign raider arriving
 
     app.patch("/parcels/:id/status", async (req, res) => {
-      const { deliveryStatus } = req.body;
+      const { deliveryStatus, raiderId } = req.body;
 
       const query = { _id: new ObjectId(req.params.id) };
 
@@ -232,6 +233,20 @@ async function run() {
           deliveryStatus: deliveryStatus,
         },
       };
+
+      if (deliveryStatus === "parcel_delivered") {
+        const raiderQuery = { _id: new ObjectId(raiderId) };
+        const raiderUpdatedDoc = {
+          $set: {
+            workStatus: "available",
+          },
+        };
+
+        const raiderResult = await raiderCollection.updateOne(
+          raiderQuery,
+          raiderUpdatedDoc,
+        );
+      }
 
       const result = await parcelCollection.updateOne(query, updatedDoc);
 

@@ -82,6 +82,8 @@ async function run() {
   try {
     await client.connect();
 
+    // database
+
     const db = client.db("ans_shift_db");
 
     // parcel collection
@@ -100,6 +102,10 @@ async function run() {
 
     const raiderCollection = db.collection("raiders");
 
+    // Parcel tracking colection
+
+    const trackingsCollection = db.collection("trackings");
+
     // middle  admin before allowing admin activity
     // must be used after verifyFirebaseToken middleware
 
@@ -113,6 +119,20 @@ async function run() {
       }
 
       next();
+    };
+
+    // parcel  tracking function
+
+    const logTracking = async (trackingId, status) => {
+      const log = {
+        trackingId,
+        status,
+        details: status.split("_").join(" "),
+        createdAt: new Date(),
+      };
+
+      const result = await trackingsCollection.insertOne(log);
+      return result;
     };
 
     // ********  parcel related all api **************
@@ -149,7 +169,7 @@ async function run() {
       }
       if (deliveryStatus !== "parcel_delivered") {
         query.deliveryStatus = {
-          $nin: ["driver_delevered"],
+          $nin: ["parcel_delevered"],
         };
       } else {
         query.deliveryStatus = deliveryStatus;
@@ -189,7 +209,7 @@ async function run() {
     // ToDo : Rename this to be specific like /parcel/:id/assign
 
     app.patch("/parcels/:id", async (req, res) => {
-      const { raiderId, raiderName, raiderEmail } = req.body;
+      const { raiderId, raiderName, raiderEmail, trackingId } = req.body;
       const id = req.params.id;
 
       const query = { _id: new ObjectId(id) };
@@ -217,6 +237,7 @@ async function run() {
         raiderQuery,
         raiderUpdatedDoc,
       );
+      logTracking(trackingId, "driver_assign");
 
       res.send(raiderResult);
     });
@@ -224,7 +245,7 @@ async function run() {
     // assign raider arriving
 
     app.patch("/parcels/:id/status", async (req, res) => {
-      const { deliveryStatus, raiderId } = req.body;
+      const { deliveryStatus, raiderId, trackingId } = req.body;
 
       const query = { _id: new ObjectId(req.params.id) };
 
@@ -250,6 +271,8 @@ async function run() {
 
       const result = await parcelCollection.updateOne(query, updatedDoc);
 
+      logTracking(trackingId, deliveryStatus);
+
       res.send(result);
     });
 
@@ -265,7 +288,7 @@ async function run() {
       res.send(result);
     });
 
-    //  ******** user get related api all api *******************
+    //  ******** user get related api all api *******
 
     // user get
 
@@ -546,9 +569,7 @@ async function run() {
 
       if (session.payment_status === "paid") {
         const id = session.metadata.parcelId;
-        const query = {
-          _id: new ObjectId(id),
-        };
+        const query = { _id: new ObjectId(id) };
 
         const update = {
           $set: {
@@ -573,6 +594,11 @@ async function run() {
 
         if (session.payment_status === "paid") {
           const resultPayment = await paymentCollection.insertOne(payment);
+
+          // payment trcking
+
+          logTracking(trackingId, "parcel_paid");
+
           res.send({
             success: true,
             modifyParcel: result,
@@ -582,6 +608,18 @@ async function run() {
           });
         }
       }
+    });
+
+    // ************* tracking Related api ***********
+
+    app.get("/tracking/:trackingId/logs", async (req, res) => {
+      const trackingId = req.params.trackingId;
+
+      const query = { trackingId };
+
+      const result = await trackingsCollection.find(query).toArray();
+
+      res.send(result);
     });
 
     // Send a ping to confirm a successful connection
@@ -601,6 +639,7 @@ run().catch(console.dir);
 app.get("/", (req, res) => {
   res.send("ans shift server is running");
 });
+
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });

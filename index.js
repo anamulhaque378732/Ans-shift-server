@@ -5,8 +5,11 @@ require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const cors = require("cors");
+
 const app = express();
+
 const port = process.env.PORT || 5000;
+
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // firebase  admin  new version
@@ -37,12 +40,6 @@ function generateTrackingId() {
   // Final Tracking ID
   return `${prefix}-${date}-${random}`;
 }
-
-// Force Node.js to use Cloudflare and Google public DNS
-
-// const dns = require("node:dns");
-
-// dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 // middleware
 
@@ -103,12 +100,14 @@ async function run() {
 
     const raiderCollection = db.collection("raiders");
 
-    // Parcel tracking colection
+    // Parcel tracking collection
 
     const trackingsCollection = db.collection("trackings");
 
     // middle  admin before allowing admin activity
     // must be used after verifyFirebaseToken middleware
+
+    //  verify admin
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded_email;
@@ -116,6 +115,20 @@ async function run() {
       const user = await userCollection.findOne(query);
 
       if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
+      next();
+    };
+
+    // Verify raider
+
+    const verifyRaider = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+
+      if (!user || user.role !== "raider") {
         return res.status(403).send({ message: "forbidden access" });
       }
 
@@ -161,7 +174,7 @@ async function run() {
 
     // raider related data load, assigned deliver
 
-    app.get("/parcels/raider", async (req, res) => {
+    app.get("/parcels/raider", verifyRaider, async (req, res) => {
       const { raiderEmail, deliveryStatus } = req.query;
       const query = {};
 
@@ -215,7 +228,7 @@ async function run() {
 
     // ToDo : Rename this to be specific like /parcel/:id/assign
 
-    app.patch("/parcels/:id", async (req, res) => {
+    app.patch("/parcels/:id", verifyAdmin, async (req, res) => {
       const { raiderId, raiderName, raiderEmail, trackingId } = req.body;
       const id = req.params.id;
 
@@ -487,8 +500,8 @@ async function run() {
     // payment related api new post
 
     app.post("/payment-checkout-session", async (req, res) => {
-      const paymentInfo = req.body;
-      const amount = parseInt(paymentInfo.cost) * 100;
+      const parcelInfo = req.body;
+      const amount = parseInt(parcelInfo.cost) * 100;
       const session = await stripe.checkout.sessions.create({
         line_items: [
           {
@@ -496,7 +509,7 @@ async function run() {
               unit_amount: amount,
               currency: "USD",
               product_data: {
-                name: `Please pay for: ${paymentInfo.parcelName}`,
+                name: `Please pay for: ${parcelInfo.parcelName}`,
               },
             },
             quantity: 1,
@@ -506,12 +519,12 @@ async function run() {
         mode: "payment",
 
         metadata: {
-          parcelId: paymentInfo.parcelId,
-          parcelName: paymentInfo.parcelName,
-          trackingId: paymentInfo.trackingId,
+          parcelId: parcelInfo.parcelId,
+          parcelName: parcelInfo.parcelName,
+          trackingId: parcelInfo.trackingId,
         },
 
-        customer_email: paymentInfo.senderEmail,
+        customer_email: parcelInfo.senderEmail,
         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
       });
@@ -568,22 +581,22 @@ async function run() {
           trackingId: trackingId,
         };
 
-        if (session.payment_status === "paid") {
-          const resultPayment = await paymentCollection.insertOne(payment);
+        const resultPayment = await paymentCollection.insertOne(payment);
 
-          // payment trcking
+        // payment trcking
 
-          logTracking(trackingId, "parcel_paid");
+        logTracking(trackingId, "parcel_paid");
 
-          res.send({
-            success: true,
-            modifyParcel: result,
-            trackingId: trackingId,
-            transactionId: session.payment_intent,
-            paymentInfo: resultPayment,
-          });
-        }
+        return res.send({
+          success: true,
+          modifyParcel: result,
+          trackingId: trackingId,
+          transactionId: session.payment_intent,
+          paymentInfo: resultPayment,
+        });
       }
+
+      return res.send({ success: false });
     });
 
     // ************* tracking Related api ***********

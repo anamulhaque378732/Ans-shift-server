@@ -196,6 +196,31 @@ async function run() {
       res.send(result);
     });
 
+    // parcel related api get . find parcel for status, group and something
+
+    app.get("/parcels/delivery-status/stars", verifyAdmin, async (req, res) => {
+      const pipeline = [
+        {
+          $group: {
+            _id: "$deliveryStatus",
+            count: { $sum: 1 },
+          },
+        },
+
+        {
+          $project: {
+            status: "$_id",
+            count: 1,
+            //_id:0 // when con not wait id
+          },
+        },
+      ];
+
+      const result = await parcelCollection.aggregate(pipeline).toArray();
+
+      res.send(result);
+    });
+
     // payment data load related parcel
 
     app.get("/parcels/:id", async (req, res) => {
@@ -207,7 +232,7 @@ async function run() {
       res.send(result);
     });
 
-    // parcels related api
+    // parcels related api Post
 
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;
@@ -218,7 +243,7 @@ async function run() {
 
       parcel.trackingId = trackingId;
 
-      logTracking(trackingId, "parcel_creadted");
+      logTracking(trackingId, "parcel_created");
 
       const result = await parcelCollection.insertOne(parcel);
       res.send(result);
@@ -405,6 +430,62 @@ async function run() {
       const cursor = raiderCollection.find(query).sort({ createdAt: -1 });
 
       const result = await cursor.toArray();
+
+      res.send(result);
+    });
+
+    // raider related api , aggregate on  parcels
+
+    app.get("/raider/delivery-per-day", async (req, res) => {
+      const email = req.query.email;
+
+      // aggregate on parcel
+
+      const pipeline = [
+        {
+          $match: {
+            raiderEmail: email,
+            deliveryStatus: "parcel_delivered",
+          },
+        },
+        {
+          $lookup: {
+            from: "trackings",
+            localField: "trackingId",
+            foreignField: "trackingId",
+            as: "parcel_tracking",
+          },
+        },
+        {
+          $unwind: "$parcel_tracking",
+        },
+
+        {
+          $match: {
+            "parcel_tracking.status": "parcel_delivered",
+          },
+        },
+
+        {
+          $addFields: {
+            deliveryDay: {
+              $dateToString: {
+                format: "%Y-%m_%d",
+                date: "$parcel_tracking.createdAt",
+              },
+            },
+          },
+        },
+
+        {
+          $group: {
+            _id: "$deliveryDay",
+            deliveryCount: { $sum: 1 },
+          },
+        },
+      ];
+
+      const result = await parcelCollection.aggregate(pipeline).toArray();
 
       res.send(result);
     });

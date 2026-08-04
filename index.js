@@ -64,7 +64,6 @@ const client = new MongoClient(uri, {
 
 const verifyFirebaseToken = async (req, res, next) => {
   const token = req.headers.authorization;
-  // console.log(token);
 
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
@@ -77,7 +76,6 @@ const verifyFirebaseToken = async (req, res, next) => {
     req.decoded_email = decoded.email;
     next();
   } catch (error) {
-    console.error("Firebase Verify Error:", error);
     return res.status(401).send({ message: "Unauthorized access" });
   }
 };
@@ -155,6 +153,81 @@ async function run() {
       return result;
     };
 
+    //  ******** user get related api all api *******
+
+    // user get
+
+    app.get("/users", verifyFirebaseToken, async (req, res) => {
+      const searchText = req.query.searchText;
+
+      const query = {};
+
+      if (searchText) {
+        // way one : search bye name
+        // query.displayName = { $regex: searchText, $options: "i" };
+
+        // way two  : search name and email
+        query.$or = [
+          { displayName: { $regex: searchText, $options: "i" } },
+          { email: { $regex: searchText, $options: "i" } },
+        ];
+      }
+
+      const cursor = userCollection.find(query).sort({ createdAt: -1 });
+
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    //  set role in the website in email
+
+    app.get("/users/:email/role", verifyFirebaseToken, async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+
+      res.send({ role: user?.role || "user" });
+    });
+
+    // user post related api
+
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+
+      user.role = "user";
+      user.createdAt = new Date();
+      const email = user.email;
+      const userExists = await userCollection.findOne({ email: email });
+
+      if (userExists) {
+        return res.send({ message: "User exists" });
+      }
+      const result = await userCollection.insertOne(user);
+
+      res.send(result);
+    });
+
+    // update user Patch
+
+    app.patch(
+      "/users/:id/role",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const roleInfo = req.body;
+
+        const query = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: { role: roleInfo.role },
+        };
+
+        const result = await userCollection.updateOne(query, updatedDoc);
+
+        res.send(result);
+      },
+    );
+
     // ********  parcel related all api **************
 
     app.get("/parcels", async (req, res) => {
@@ -180,52 +253,62 @@ async function run() {
 
     // raider related data load, assigned deliver
 
-    app.get("/parcels/raider", verifyRaider, async (req, res) => {
-      const { raiderEmail, deliveryStatus } = req.query;
-      const query = {};
+    app.get(
+      "/parcels/raider",
+      verifyFirebaseToken,
+      verifyRaider,
+      async (req, res) => {
+        const { raiderEmail, deliveryStatus } = req.query;
+        const query = {};
 
-      if (raiderEmail) {
-        query.raiderEmail = raiderEmail;
-      }
-      if (deliveryStatus !== "parcel_delivered") {
-        query.deliveryStatus = {
-          $nin: ["parcel_delevered"],
-        };
-      } else {
-        query.deliveryStatus = deliveryStatus;
-      }
+        if (raiderEmail) {
+          query.raiderEmail = raiderEmail;
+        }
+        if (deliveryStatus !== "parcel_delivered") {
+          query.deliveryStatus = {
+            $nin: ["parcel_delevered"],
+          };
+        } else {
+          query.deliveryStatus = deliveryStatus;
+        }
 
-      const cursor = parcelCollection.find(query);
+        const cursor = parcelCollection.find(query);
 
-      const result = await cursor.toArray();
+        const result = await cursor.toArray();
 
-      res.send(result);
-    });
+        res.send(result);
+      },
+    );
 
     // parcel related api get . find parcel for status, group and something
 
-    app.get("/parcels/delivery-status/stars", verifyAdmin, async (req, res) => {
-      const pipeline = [
-        {
-          $group: {
-            _id: "$deliveryStatus",
-            count: { $sum: 1 },
+    app.get(
+      "/parcels/delivery-status/stars",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const pipeline = [
+          {
+            $group: {
+              _id: "$deliveryStatus",
+              count: { $sum: 1 },
+            },
           },
-        },
 
-        {
-          $project: {
-            status: "$_id",
-            count: 1,
-            //_id:0 // when con not wait id
+          {
+            $project: {
+              status: "$_id",
+              count: 1,
+              //_id:0 // when con not wait id
+            },
           },
-        },
-      ];
+        ];
 
-      const result = await parcelCollection.aggregate(pipeline).toArray();
+        const result = await parcelCollection.aggregate(pipeline).toArray();
 
-      res.send(result);
-    });
+        res.send(result);
+      },
+    );
 
     // payment data load related parcel
 
@@ -338,81 +421,6 @@ async function run() {
 
       res.send(result);
     });
-
-    //  ******** user get related api all api *******
-
-    // user get
-
-    app.get("/users", verifyFirebaseToken, async (req, res) => {
-      const searchText = req.query.searchText;
-
-      const query = {};
-
-      if (searchText) {
-        // way one : search bye name
-        // query.displayName = { $regex: searchText, $options: "i" };
-
-        // way two  : search name and email
-        query.$or = [
-          { displayName: { $regex: searchText, $options: "i" } },
-          { email: { $regex: searchText, $options: "i" } },
-        ];
-      }
-
-      const cursor = userCollection.find(query).sort({ createdAt: -1 });
-
-      const result = await cursor.toArray();
-      res.send(result);
-    });
-
-    //  set role in the website in email
-
-    app.get("/users/:email/role", async (req, res) => {
-      const email = req.params.email;
-      const query = { email };
-      const user = await userCollection.findOne(query);
-
-      res.send({ role: user?.role || "user" });
-    });
-
-    // user post related api
-
-    app.post("/users", async (req, res) => {
-      const user = req.body;
-
-      user.role = "user";
-      user.createdAt = new Date();
-      const email = user.email;
-      const userExists = await userCollection.findOne({ email: email });
-
-      if (userExists) {
-        return res.send({ message: "User exists" });
-      }
-      const result = await userCollection.insertOne(user);
-
-      res.send(result);
-    });
-
-    // update user Patch
-
-    app.patch(
-      "/users/:id/role",
-      verifyFirebaseToken,
-      verifyAdmin,
-      async (req, res) => {
-        const id = req.params.id;
-        const roleInfo = req.body;
-
-        const query = { _id: new ObjectId(id) };
-        const updatedDoc = {
-          $set: { role: roleInfo.role },
-        };
-
-        const result = await userCollection.updateOne(query, updatedDoc);
-
-        res.send(result);
-      },
-    );
 
     //  *******  raider related all api   *******
 
